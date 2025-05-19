@@ -1,0 +1,156 @@
+---
+title: "Metaanalysis Assigment"
+author: "Thuan Tran"
+date: today
+format:  
+  html:
+    theme: lumen
+    toc: true
+    toc_float: true
+title-block-banner: true
+execute:
+  echo: fenced
+---
+
+```{r}
+#| label: setup
+#| include: false
+
+library(meta)
+library(metafor)
+library(dplyr)
+library(readxl)
+```
+
+## 1. Import the data
+
+```{r}
+#| echo: false
+
+data <- read_excel("data/metaanalysis_data.xlsx")
+head(data)
+```
+## 2. Experiment
+```{r}
+#| echo: false
+data <- data |>
+  mutate(
+    Quality_CaseDef = ifelse(`Case definition adequate` == "*", 1, 0),
+    Quality_Represent = ifelse(`Representativeness of cases` == "*", 1, 0),
+    Quality_Controls = ifelse(`Selection of controls` == "*", 1, 0),
+    Quality_ParentOpinion = ifelse(`Parental opinion` == "*", 1, 0),
+    Quality_ComparableGroups = ifelse(grepl("\\*", `Comparability of both groups`), 1, 0),
+    Quality_BehaviourDefined = ifelse(`Ascertainment of behaviour` == "*", 1, 0),
+    Quality_SameMethod = rep(1, nrow(data)),  # Always fulfilled
+    Quality_Nonresponse = ifelse(`Non‐response rate` == "*", 1, 0),
+    Majority_Female = ifelse(`Female authors` > `Male authors`, 1, 0)
+  )
+```
+
+### a. Combine the effects
+```{r}
+#| echo: false
+m <- metacont(
+  n.e = N_boys,
+  mean.e = Mean_boys_play_male,
+  sd.e = SD_boys_play_male,
+  n.c = N_girls,
+  mean.c = Mean_girls_play_male,
+  sd.c = SD_girls_play_male,
+  data = data,
+  studlab = Study,
+  sm = "SMD",
+  method.tau = "REML",
+  common = FALSE,
+  random = TRUE
+)
+```
+
+```{r}
+#| echo: false
+summary(m)
+```
+We can see that:
+
+- 27 studies were included.
+
+- the overall effect size (SMD) is 1.01 with a 95% confidence interval of [0.79; 1.23].
+
+- This means boys played significantly more with male-typed toys than girls did.
+
+- The p-value < 0.0001, showing a statistically significant difference.
+
+- Heterogeneity is high:
+
+   + I² = 71.1%, meaning much of the variation is due to differences between studies.
+
+   + Tau² = 0.24, indicating moderate variability in effect sizes.
+
+
+### b. Create a funnel plot
+```{r}
+#| echo: false
+# Funnel plot to check publication bias
+funnel(m, 
+       contour = c(0.90, 0.95, 0.99),
+       col.contour = c("darkblue", "blue", "lightblue"))
+legend("topright", legend = c("p < 0.10", "p < 0.05", "p < 0.01"),
+       fill = c("darkblue", "blue", "lightblue"))
+```
+We can observe that:
+
+- the plot is slightly skewed, with more studies appearing on the right side. 
+
+- This may suggest a possible publication bias: studies showing stronger effects (in favor of boys preferring male-typed toys) may be more likely to be published.
+
+- However, the distribution is not extremely asymmetric, so the bias may be small.
+
+### c. Check if methods / quality affect the results
+```{r}
+#| echo: false
+# Meta-regression with method and quality variables
+metareg(m, ~ `Neutral toys` + `Parent present` + Setting + Country +
+           Quality_CaseDef + Quality_Represent + Quality_Controls +
+           Quality_ParentOpinion + Quality_ComparableGroups +
+           Quality_BehaviourDefined + Quality_SameMethod + Quality_Nonresponse)
+```
+- We ran a model to see if the way studies were done (methods and quality) affected the results.
+- These things did make a difference:
+  - Not using neutral toys → stronger results.
+  - Study setting (home, lab, nursery) affected results.
+  - Countries with more gender equality had smaller effects.
+  - Studies that matched boys and girls well showed different results.
+  - Asking parents about gender views made results stronger.
+  - Reporting dropouts also affected results.
+  - The model explained about 10% of the differences between studies.
+  - There is still a lot of variation (I² = 72%) that is not explained.
+
+*About the warnings:*
+
+- One study was skipped because of missing data.
+
+- Some variables were removed automatically because they didn’t help the model.
+
+### d. Author Gender
+```{r}
+#| echo: false
+# Create a new variable: more female than male authors
+data <- data |>
+  mutate(Majority_Female = ifelse(`Female authors` > `Male authors`, 1, 0))
+
+# Meta-regression on author gender
+metareg(m, ~ Majority_Female)
+```
+- We tested if the gender of the study authorsaffected the results.
+
+- Specifically, we looked at whether studies with more female authors gave different results.
+
+What we found:
+
+- Studies with more female authors showed a smaller effect size.
+
+- The difference was statistically significant (p = 0.011).
+
+- This means author gender may influence the reported outcomes.
+
+- The model explained about 22% of the variation between studies.
